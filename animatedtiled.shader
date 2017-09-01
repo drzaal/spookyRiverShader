@@ -1,3 +1,5 @@
+// Upgrade NOTE: replaced 'mul(UNITY_MATRIX_MVP,*)' with 'UnityObjectToClipPos(*)'
+
 Shader "Poikolos/aminatedtiled"
 {
 	Properties
@@ -13,6 +15,8 @@ Shader "Poikolos/aminatedtiled"
         _YFrames ("Y Frames", Int) = 1
         _XOverlap ("X Overlap", Float) = 0
         _YOverlap ("Y Overlap", Float) = 0
+        _XAnchor ("X Anchor", Range(0, 1)) = 0.5
+        _YAnchor ("Y Anchor", Range(0, 1)) = 0.5
 	}
 	SubShader
 	{
@@ -51,6 +55,8 @@ Shader "Poikolos/aminatedtiled"
         uniform int _YFrames;
         uniform float _XOverlap;
         uniform float _YOverlap;
+        uniform float _XAnchor;
+        uniform float _YAnchor;
 
         struct Vertex {
             float4 vertex : POSITION;
@@ -101,6 +107,33 @@ Shader "Poikolos/aminatedtiled"
             return frameOffset;
         }
 
+        fixed2 toCam (fixed2 uv)
+        {
+            fixed2 anchor = fixed2(_XAnchor, _YAnchor);
+            float2 nuAnchor = mul(UNITY_MATRIX_V, float4(anchor.x, 0, anchor.y, 0)).xz;
+            // need SOME way to make these rounding boundaries shift with rotation
+            uv = frac(uv - nuAnchor) - anchor;// - anchor;// - anchor;
+            uv *= 1.2;
+	        //float3 viewDir = normalize( WorldSpaceViewDir(uv) );
+            //float4 viewMatrix = UNITY_MATRIX_IT_MV;
+            float4 uv4;
+            uv4.yw = 0;
+            uv4.x = uv.x;
+            uv4.z = uv.y;
+            // float3 view_vec = _WorldSpaceCameraPos - vertexworldspaceposition;
+
+            float4 rotated = mul(UNITY_MATRIX_V, uv4);
+            float2 squash = float2(
+                length(mul(UNITY_MATRIX_V, float4(1,0,0,0))),
+                length(mul(UNITY_MATRIX_V, float4(0,0,1,0)))
+            );
+
+            //anchor = 1 - anchor;
+            uv = rotated.xz + anchor; // + fixed2(0.5, 0.15)
+            uv = clamp(uv / squash, 0, 1);
+            return uv / float2(_XFrames, _YFrames);// + nuAnchor;
+        }
+
         void surf (Input i, inout SurfaceOutput o)
         {
             float2 texuv = i.uv_MainTex + _Bamplitude * sin(M_PI * _Time.w * fixed2(_XSpeed, _YSpeed));
@@ -115,13 +148,13 @@ Shader "Poikolos/aminatedtiled"
             );
 
             fixed2 first = frame2uv(frameTime);
-            fixed2 directuv = frac(texuv) / float2(_XFrames, _YFrames);
-            fixed4 col1 = tex2D(_MainTex, first + directuv);
+            fixed2 directuv = texuv;
+            fixed4 col1 = tex2D(_MainTex, first + toCam(directuv));
             col1 = col1 * step(0.1, col1);
 
             fixed2 second = frame2uv(frameTime + nudge);
-            fixed2 offsetuv = frac(texuv + overlayOffset) / float2(_XFrames, _YFrames);
-            fixed4 col2 = tex2D(_MainTex, second + offsetuv);
+            fixed2 offsetuv = texuv + overlayOffset;
+            fixed4 col2 = tex2D(_MainTex, second + toCam(offsetuv));
             
             col2 = col2 * step(0.1, col2);
 
